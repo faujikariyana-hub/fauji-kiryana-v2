@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fauji Kiryana - Multi-Payment POS</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f4f6f9; margin: 0; padding: 15px; color: #333; }
+    .container { max-width: 750px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+    h2, h3 { text-align: center; color: #1e3c72; margin-top: 0; }
+    
+    .top-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+    .voice-btn { padding: 12px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .voice-btn.listening { background: #dc3545; animation: pulse 1.2s infinite; }
+    .scan-btn { padding: 12px; background: #6f42c1; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(0.98); } 100% { opacity: 1; transform: scale(1); } }
+
+    .status-box { background: #eef2f7; padding: 10px; border-radius: 6px; font-size: 13px; color: #555; text-align: center; margin-bottom: 15px; min-height: 40px; border: 1px solid #d0d7de; }
+    .voice-guide { font-size: 11px; color: #6c757d; margin-top: 4px; }
+
+    #reader { width: 100%; margin-bottom: 15px; display: none; border: 2px dashed #6f42c1; border-radius: 8px; }
+
+    .nav-tabs { display: flex; gap: 5px; margin-bottom: 15px; border-bottom: 2px solid #ddd; }
+    .tab-btn { flex: 1; padding: 10px; border: none; background: #e9ecef; cursor: pointer; font-weight: bold; border-radius: 6px 6px 0 0; }
+    .tab-btn.active { background: #007bff; color: white; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+    th, td { border-bottom: 1px solid #ddd; padding: 8px 6px; text-align: left; vertical-align: middle; font-size: 13px; }
+    th { background-color: #f8f9fa; color: #495057; }
+    .remove-btn { background: #ff4d4d; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+    
+    .low-stock { color: #dc3545; font-weight: bold; background: #ffe6e6; }
+    .expired { color: #dc3545; font-weight: bold; background: #ffcccc; }
+    .expiring-soon { color: #856404; font-weight: bold; background: #fff3cd; }
+
+    .qty-control { display: flex; align-items: center; gap: 4px; }
+    .qty-btn { background: #007bff; color: white; border: none; width: 24px; height: 24px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    .qty-input { width: 45px; text-align: center; padding: 2px; border: 1px solid #ccc; border-radius: 4px; font-weight: bold; }
+
+    .manual-inputs, .price-mgr-inputs, .khata-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; margin-bottom: 15px; }
+    input, select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 100%; }
+    .add-btn { background: #007bff; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+
+    .discount-box, .payment-box { background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #ddd; margin-bottom: 12px; }
+    .payment-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+
+    .summary-box { background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #e9ecef; }
+    .summary-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; margin-bottom: 6px; }
+
+    .action-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+    .btn { padding: 12px; border: none; border-radius: 6px; font-size: 14px; font-weight: bold; color: white; cursor: pointer; text-align: center; text-decoration: none; }
+    .btn-print { background: #17a2b8; }
+    .btn-wa { background: #25d366; }
+    .btn-clear { background: #6c757d; }
+
+    .dashboard { background: #e9ecef; border-radius: 8px; padding: 15px; margin-top: 15px; border: 1px solid #dee2e6; }
+    .dash-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .card { background: white; padding: 12px; border-radius: 6px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    .card h4 { margin: 0 0 5px 0; font-size: 12px; color: #6c757d; }
+    .card .amount { font-size: 18px; font-weight: bold; color: #28a745; }
+    .card .cost { font-size: 18px; font-weight: bold; color: #007bff; }
+
+    @media print {
+      body * { visibility: hidden; }
+      #printable-receipt, #printable-receipt * { visibility: visible; }
+      #printable-receipt { position: absolute; left: 0; top: 0; width: 100%; font-family: monospace; font-size: 12px; }
+      .no-print { display: none !important; }
+      .print-only { display: inline !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>🛒 Fauji Kiryana POS</h2>
+  
+  <div class="top-bar no-print">
+    <button id="voiceBtn" class="voice-btn" onclick="toggleVoice()">🎤 Start Voice AI</button>
+    <button class="scan-btn" onclick="toggleScanner('sales')">📷 Scan Barcode</button>
+  </div>
+  
+  <div id="status" class="status-box no-print">
+    <div><b>Voice Status:</b> <span id="voiceTextStatus" style="color:#28a745;">Ready (Click Microphone to Start)</span></div>
+    <div class="voice-guide">Commands: "2 Cheeni", "5 Doodh", "Clear Bill", "Print Bill"</div>
+  </div>
+  
+  <div id="reader" class="no-print"></div>
+
+  <!-- Tabs Navigation -->
+  <div class="nav-tabs no-print">
+    <button class="tab-btn active" onclick="switchTab('billingTab')">🛒 Billing</button>
+    <button class="tab-btn" onclick="switchTab('inventoryTab')">📦 Inventory & Expiry</button>
+    <button class="tab-btn" onclick="switchTab('khataTab')">📖 Udhaar / Khata</button>
+  </div>
+
+  <!-- TAB 1: BILLING -->
+  <div id="billingTab" class="tab-content active">
+    <!-- Manual Quick Add Item -->
+    <div style="background: #eef2f7; padding: 10px; border-radius: 6px; margin-bottom: 12px;" class="no-print">
+      <b style="font-size: 13px; display: block; margin-bottom: 5px;">➕ Quick Manual Item Add:</b>
+      <div class="manual-inputs" style="margin-bottom:0;">
+        <input type="text" id="manualItem" placeholder="Item Name">
+        <input type="number" id="manualQty" placeholder="Qty" value="1">
+        <input type="number" id="manualPrice" placeholder="Sell Price">
+        <input type="number" id="manualCost" placeholder="Cost Price">
+        <button class="add-btn" onclick="addManualItem()">+ Add</button>
+      </div>
+    </div>
+
+    <!-- Customer Link for Udhaar -->
+    <div style="margin-bottom: 12px;" class="no-print">
+      <label style="font-size:12px; font-weight:bold;">Customer (Required if paying via Udhaar):</label>
+      <select id="billCustomerSelect" style="margin-top: 4px;">
+        <option value="">-- Select Customer for Udhaar --</option>
+      </select>
+    </div>
+
+    <!-- Bill Receipt -->
+    <div id="printable-receipt">
+      <h3 style="text-align: center; margin: 0;">Fauji Kiryana Store</h3>
+      <p style="text-align: center; margin: 5px 0;" id="billDate"></p>
+      <p style="text-align: center; margin: 0 0 5px 0; font-weight: bold;" id="billCustomerName"></p>
+      <hr style="border-top: 1px dashed #000;">
+
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Qty</th>
+            <th>Rate</th>
+            <th>Total</th>
+            <th class="no-print"></th>
+          </tr>
+        </thead>
+        <tbody id="cartTable"></tbody>
+      </table>
+
+      <!-- Discount Box -->
+      <div class="discount-box no-print">
+        <label><b>Discount:</b></label>
+        <div style="display:flex; gap:8px; margin-top:4px;">
+          <input type="number" id="discountInput" placeholder="0" value="0" onchange="calculateBill()">
+          <select id="discountType" onchange="calculateBill()">
+            <option value="fixed">Rs (Flat)</option>
+            <option value="percent">% (Percentage)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Multiple Payment Modes Box -->
+      <div class="payment-box no-print">
+        <b>💳 Select / Split Payment Methods:</b>
+        <div class="payment-grid">
+          <div>
+            <label style="font-size:11px;">💵 Cash (Rs):</label>
+            <input type="number" id="payCash" placeholder="0" onchange="calculateBill()">
+          </div>
+          <div>
+            <label style="font-size:11px;">📖 Udhaar (Rs):</label>
+            <input type="number" id="payUdhaar" placeholder="0" onchange="calculateBill()">
+          </div>
+          <div>
+            <label style="font-size:11px;">💳 Card (Rs):</label>
+            <input type="number" id="payCard" placeholder="0" onchange="calculateBill()">
+          </div>
+          <div>
+            <label style="font-size:11px;">📱 Digital Wallet (Rs):</label>
+            <input type="number" id="payDigital" placeholder="0" onchange="calculateBill()">
+          </div>
+        </div>
+      </div>
+
+      <hr style="border-top: 1px dashed #000;">
+      
+      <!-- Summary Box -->
+      <div class="summary-box">
+        <div class="summary-row"><span>Subtotal:</span><span id="subTotal">Rs. 0</span></div>
+        <div class="summary-row" style="color: #dc3545;"><span>Discount:</span><span id="discountVal">Rs. 0</span></div>
+        <div class="summary-row" style="font-size: 16px; color: #28a745;"><span>Grand Total:</span><span id="grandTotal">Rs. 0</span></div>
+        
+        <hr style="border-top: 1px dotted #ccc; margin: 6px 0;">
+        <div style="font-weight: bold; font-size: 12px; margin-bottom: 4px;">Payment Breakdown:</div>
+        <div id="receiptPaymentBreakdown" style="font-size: 12px; line-height: 1.4;"></div>
+        <div class="summary-row" id="dueRow" style="color: #dc3545; font-size: 12px; margin-top: 4px; display: none;"><span>Remaining Unpaid:</span><span id="dueAmount">Rs. 0</span></div>
+      </div>
+
+      <p style="text-align: center; margin-top: 10px;">Thank You! Visit Again 🙏</p>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-btns no-print">
+      <button class="btn btn-print" style="grid-column: span 2;" onclick="completeAndPrint()">🖨️ Complete Sale & Print Bill</button>
+      <button class="btn btn-wa" onclick="shareWhatsApp()">📱 WhatsApp Bill</button>
+      <button class="btn btn-clear" onclick="clearCart()">🗑️ Clear Bill</button>
+    </div>
+  </div>
+
+  <!-- TAB 2: INVENTORY & EXPIRY LISTING -->
+  <div id="inventoryTab" class="tab-content no-print">
+    <h3>📦 Product Listing & Expiry Setup</h3>
+    
+    <button class="scan-btn" style="width:100%; margin-bottom:12px; background:#17a2b8;" onclick="toggleScanner('listing')">📷 Scan Product Barcode to Fill</button>
+
+    <div class="price-mgr-inputs">
+      <input type="text" id="dbItemName" placeholder="Keyword (e.g. cheeni)">
+      <input type="number" id="dbSellPrice" placeholder="Selling Price">
+      <input type="number" id="dbCostPrice" placeholder="Cost Price">
+      <input type="number" id="dbStock" placeholder="Stock Qty">
+      <input type="number" id="dbLowStockLimit" placeholder="Low Limit (Default 5)" value="5">
+      <input type="date" id="dbExpiryDate">
+      <input type="text" id="dbBarcode" placeholder="Barcode ID">
+      <button class="add-btn" onclick="saveProductToDB()">Save Product</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Keyword</th>
+          <th>Sell</th>
+          <th>Cost</th>
+          <th>Stock</th>
+          <th>Expiry Date</th>
+          <th>Barcode</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="dbTableBody"></tbody>
+    </table>
+  </div>
+
+  <!-- TAB 3: UDHAAR / KHATA LEDGER -->
+  <div id="khataTab" class="tab-content no-print">
+    <h3>📖 Customer Udhaar Ledger</h3>
+    <div class="khata-inputs">
+      <input type="text" id="custName" placeholder="Customer Name">
+      <input type="text" id="custPhone" placeholder="WhatsApp (e.g. 923001234567)">
+      <button class="add-btn" onclick="addCustomer()">Add Customer</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th>Pending Udhaar</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="khataTableBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Dashboard -->
+  <div class="dashboard no-print">
+    <h3>📊 Daily Sales Summary</h3>
+    <div class="dash-cards">
+      <div class="card">
+        <h4>Today's Sales</h4>
+        <div class="amount" id="dashRevenue">Rs. 0</div>
+      </div>
+      <div class="card">
+        <h4>Today's Net Profit</h4>
+        <div class="cost" id="dashProfit">Rs. 0</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const defaultProductDB = {
+    "cheeni": [150, 140, "CHEENI", 50, "", "2027-12-31", 5],
+    "doodh": [200, 180, "DOODH", 4, "", "2026-08-30", 5],
+    "bread": [100, 85, "BREAD", 10, "", "2026-09-02", 3]
+  };
+
+  let productDB = JSON.parse(localStorage.getItem("fauji_db_v5")) || defaultProductDB;
+  let khataDB = JSON.parse(localStorage.getItem("fauji_khata_v5")) || [];
+  let dailyRevenue = parseFloat(localStorage.getItem("fauji_daily_revenue")) || 0;
+  let dailyProfit = parseFloat(localStorage.getItem("fauji_daily_profit")) || 0;
+
+  let cart = [];
+  let calculatedDiscount = 0;
+  let grandTotalCalculated = 0;
+  let isListening = false;
+  let recognition = null;
+  let html5QrcodeScanner;
+  let scanTargetMode = "sales";
+
+  window.onload = () => {
+    updateDashDisplay();
+    renderDBTable();
+    renderKhataTable();
+    populateCustomerDropdown();
+  };
+
+  function switchTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById(tabId).classList.add('active');
+  }
+
+  function addManualItem() {
+    const name = document.getElementById('manualItem').value.trim();
+    const qty = parseFloat(document.getElementById('manualQty').value) || 1;
+    const price = parseFloat(document.getElementById('manualPrice').value) || 0;
+    const cost = parseFloat(document.getElementById('manualCost').value) || 0;
+
+    if (!name || price <= 0) return alert("Enter valid Item Name and Price!");
+    
+    addToCart(name, qty, price, cost);
+    document.getElementById('manualItem').value = '';
+    document.getElementById('manualQty').value = '1';
+    document.getElementById('manualPrice').value = '';
+    document.getElementById('manualCost').value = '';
+  }
+
+  function saveProductToDB() {
+    const name = document.getElementById("dbItemName").value.toLowerCase().trim();
+    const sellPrice = parseFloat(document.getElementById("dbSellPrice").value);
+    const costPrice = parseFloat(document.getElementById("dbCostPrice").value) || 0;
+    const stock = parseFloat(document.getElementById("dbStock").value) || 0;
+    const lowLimit = parseFloat(document.getElementById("dbLowStockLimit").value) || 5;
+    const expiry = document.getElementById("dbExpiryDate").value;
+    const barcode = document.getElementById("dbBarcode").value.trim();
+
+    if (!name || isNaN(sellPrice)) return alert("Enter item name and selling price!");
+
+    productDB[name] = [sellPrice, costPrice, name.toUpperCase(), stock, barcode, expiry, lowLimit];
+    localStorage.setItem("fauji_db_v5", JSON.stringify(productDB));
+    renderDBTable();
+    alert("Product saved!");
+  }
+
+  function renderDBTable() {
+    const tbody = document.getElementById("dbTableBody");
+    tbody.innerHTML = "";
+    
+    const today = new Date().toISOString().slice(0, 10);
+    const in10Days = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    Object.keys(productDB).forEach(key => {
+      const item = productDB[key];
+      const stock = item[3];
+      const expiry = item[5] || "";
+      const lowLimit = item[6] || 5;
+      let rowClass = "";
+      let expiryLabel = expiry || "-";
+
+      if (stock <= lowLimit) rowClass = "low-stock";
+      if (expiry) {
+        if (expiry <= today) { 
+          rowClass = "expired"; 
+          expiryLabel += " 🛑 (EXPIRED)"; 
+        } else if (expiry <= in10Days) { 
+          rowClass = "expiring-soon"; 
+          expiryLabel += " ⚠️ (EXPIRES SOON - 10 DAYS)"; 
+        }
+      }
+
+      tbody.innerHTML += `
+        <tr class="${rowClass}">
+          <td>${key}</td>
+          <td>Rs. ${item[0]}</td>
+          <td>Rs. ${item[1]}</td>
+          <td>${stock} ${stock <= lowLimit ? '⚠️' : ''}</td>
+          <td>${expiryLabel}</td>
+          <td>${item[4] || '-'}</td>
+          <td><button class="remove-btn" onclick="deleteFromDB('${key}')">X</button></td>
+        </tr>`;
+    });
+  }
+
+  function deleteFromDB(key) {
+    delete productDB[key];
+    localStorage.setItem("fauji_db_v5", JSON.stringify(productDB));
+    renderDBTable();
+  }
+
+  function addToCart(name, qty, price, cost, dbKey = "") {
+    const existing = cart.find(i => i.name.toLowerCase() === name.toLowerCase());
+    if (existing) existing.qty += qty;
+    else cart.push({ name: name.toUpperCase(), qty, price, cost, dbKey });
+    calculateBill();
+  }
+
+  function changeQty(index, change) {
+    cart[index].qty += change;
+    if (cart[index].qty <= 0) cart.splice(index, 1);
+    calculateBill();
+  }
+
+  function removeItem(index) {
+    cart.splice(index, 1);
+    calculateBill();
+  }
+
+  function clearCart() {
+    cart = [];
+    document.getElementById('discountInput').value = "0";
+    document.getElementById('payCash').value = "";
+    document.getElementById('payUdhaar').value = "";
+    document.getElementById('payCard').value = "";
+    document.getElementById('payDigital').value = "";
+    document.getElementById('billCustomerSelect').value = "";
+    document.getElementById('billCustomerName').innerText = "";
+    calculateBill();
+  }
+
+  function calculateBill() {
+    const table = document.getElementById('cartTable');
+    table.innerHTML = '';
+    let subtotal = 0;
+
+    cart.forEach((item, i) => {
+      const total = item.qty * item.price;
+      subtotal += total;
+      table.innerHTML += `
+        <tr>
+          <td>${item.name}</td>
+          <td>
+            <div class="qty-control no-print">
+              <button class="qty-btn" onclick="changeQty(${i}, -1)">-</button>
+              <input type="number" class="qty-input" value="${item.qty}" readonly>
+              <button class="qty-btn" onclick="changeQty(${i}, 1)">+</button>
+            </div>
+            <span class="print-only" style="display:none;">${item.qty}</span>
+          </td>
+          <td>Rs. ${item.price}</td>
+          <td>Rs. ${total}</td>
+          <td class="no-print"><button class="remove-btn" onclick="removeItem(${i})">X</button></td>
+        </tr>`;
+    });
+
+    const discVal = parseFloat(document.getElementById('discountInput').value) || 0;
+    const discType = document.getElementById('discountType').value;
+    calculatedDiscount = discType === "percent" ? (subtotal * discVal) / 100 : discVal;
+
+    grandTotalCalculated = Math.max(0, subtotal - calculatedDiscount);
+
+    const cash = parseFloat(document.getElementById('payCash').value) || 0;
+    const udhaar = parseFloat(document.getElementById('payUdhaar').value) || 0;
+    const card = parseFloat(document.getElementById('payCard').value) || 0;
+    const digital = parseFloat(document.getElementById('payDigital').value) || 0;
+
+    if (cash === 0 && udhaar === 0 && card === 0 && digital === 0 && grandTotalCalculated > 0) {
+      document.getElementById('payCash').value = grandTotalCalculated;
+    }
+
+    const currentCash = parseFloat(document.getElementById('payCash').value) || 0;
+    const totalPaid = currentCash + udhaar + card + digital;
+    const remainingDue = grandTotalCalculated - totalPaid;
+
+    let breakdownHTML = '';
+    if (currentCash > 0) breakdownHTML += `<div>• Cash: Rs. ${currentCash.toFixed(2)}</div>`;
+    if (udhaar > 0) breakdownHTML += `<div>• Udhaar (Khata): Rs. ${udhaar.toFixed(2)}</div>`;
+    if (card > 0) breakdownHTML += `<div>• Credit/Debit Card: Rs. ${card.toFixed(2)}</div>`;
+    if (digital > 0) breakdownHTML += `<div>• Digital Wallet: Rs. ${digital.toFixed(2)}</div>`;
+
+    document.getElementById('receiptPaymentBreakdown').innerHTML = breakdownHTML || '<div>• Cash: Rs. 0</div>';
+
+    if (remainingDue > 0.01) {
+      document.getElementById('dueRow').style.display = 'flex';
+      document.getElementById('dueAmount').innerText = `Rs. ${remainingDue.toFixed(2)}`;
+    } else {
+      document.getElementById('dueRow').style.display = 'none';
+    }
+
+    document.getElementById('subTotal').innerText = `Rs. ${subtotal}`;
+    document.getElementById('discountVal').innerText = `Rs. ${calculatedDiscount.toFixed(2)}`;
+    document.getElementById('grandTotal').innerText = `Rs. ${grandTotalCalculated.toFixed(2)}`;
+    document.getElementById('billDate').innerText = new Date().toLocaleString('en-PK');
+  }
+
+  function completeAndPrint() {
+    if (cart.length === 0) return alert("Cart is empty!");
+
+    const udhaar = parseFloat(document.getElementById('payUdhaar').value) || 0;
+    const custId = document.getElementById("billCustomerSelect").value;
+
+    if (udhaar > 0 && !custId) {
+      return alert("Please select a Customer for the Udhaar portion of this bill!");
+    }
+
+    if (udhaar > 0 && custId) {
+      let customer = khataDB.find(c => c.id == custId);
+      customer.balance += udhaar;
+      localStorage.setItem("fauji_khata_v5", JSON.stringify(khataDB));
+      renderKhataTable();
+      populateCustomerDropdown();
+    }
+
+    let billRevenue = 0, billCost = 0;
+    cart.forEach(item => {
+      billRevenue += (item.qty * item.price);
+      billCost += (item.qty * item.cost);
+      if (item.dbKey && productDB[item.dbKey]) {
+        productDB[item.dbKey][3] = Math.max(0, productDB[item.dbKey][3] - item.qty);
+      }
+    });
+
+    billRevenue = Math.max(0, billRevenue - calculatedDiscount);
+    let billProfit = billRevenue - billCost;
+
+    dailyRevenue += billRevenue;
+    dailyProfit += billProfit;
+
+    localStorage.setItem("fauji_daily_revenue", dailyRevenue);
+    localStorage.setItem("fauji_daily_profit", dailyProfit);
+    localStorage.setItem("fauji_db_v5", JSON.stringify(productDB));
+
+    updateDashDisplay();
+    renderDBTable();
+    window.print();
+  }
+
+  function addCustomer() {
+    const name = document.getElementById("custName").value.trim();
+    const phone = document.getElementById("custPhone").value.trim();
+    if (!name) return alert("Enter customer name!");
+    khataDB.push({ id: Date.now(), name, phone, balance: 0 });
+    localStorage.setItem("fauji_khata_v5", JSON.stringify(khataDB));
+    document.getElementById("custName").value = "";
+    document.getElementById("custPhone").value = "";
+    renderKhataTable();
+    populateCustomerDropdown();
+  }
+
+  function renderKhataTable() {
+    const tbody = document.getElementById("khataTableBody");
+    tbody.innerHTML = "";
+    khataDB.forEach(c => {
+      tbody.innerHTML += `
+        <tr>
+          <td><b>${c.name}</b><br><small>${c.phone || ''}</small></td>
+          <td style="color:${c.balance > 0 ? '#dc3545' : '#28a745'}; font-weight:bold;">Rs. ${c.balance}</td>
+          <td>
+            <button class="add-btn" style="background:#28a745; padding:4px 8px;" onclick="clearUdhaar(${c.id})">Pay</button>
+            <button class="add-btn" style="background:#25d366; padding:4px 8px;" onclick="sendKhataWhatsApp(${c.id})">📱 Remind</button>
+          </td>
+        </tr>`;
+    });
+  }
+
+  function populateCustomerDropdown() {
+    const select = document.getElementById("billCustomerSelect");
+    select.innerHTML = '<option value="">-- Select Customer for Udhaar --</option>';
+    khataDB.forEach(c => {
+      select.innerHTML += `<option value="${c.id}">${c.name} (Balance: Rs. ${c.balance})</option>`;
+    });
+    select.onchange = (e) => {
+      const selected = khataDB.find(c => c.id == e.target.value);
+      document.getElementById("billCustomerName").innerText = selected ? `Customer: ${selected.name}` : "";
+    };
+  }
+
+  function clearUdhaar(id) {
+    const customer = khataDB.find(c => c.id == id);
+    const amount = parseFloat(prompt(`Enter payment received from ${customer.name}:`, customer.balance));
+    if (!isNaN(amount) && amount > 0) {
+      customer.balance = Math.max(0, customer.balance - amount);
+      dailyRevenue += amount;
+      dailyProfit += amount;
+      localStorage.setItem("fauji_khata_v5", JSON.stringify(khataDB));
+      localStorage.setItem("fauji_daily_revenue", dailyRevenue);
+      localStorage.setItem("fauji_daily_profit", dailyProfit);
+      updateDashDisplay();
+      renderKhataTable();
+      populateCustomerDropdown();
+    }
+  }
+
+  function sendKhataWhatsApp(id) {
+    const c = khataDB.find(i => i.id == id);
+    if (!c.phone) return alert("No phone number saved!");
+    let msg = `*Fauji Kiryana Store - Udhaar Reminder*\n\nDear ${c.name},\nYour total pending balance is *Rs. ${c.balance}*.\nPlease clear your balance at your earliest convenience. Thank you!`;
+    window.open(`https://api.whatsapp.com/send?phone=${c.phone}&text=${encodeURIComponent(msg)}`, '_blank');
+  }
+
+  function updateDashDisplay() {
+    document.getElementById('dashRevenue').innerText = `Rs. ${dailyRevenue.toFixed(2)}`;
+    document.getElementById('dashProfit').innerText = `Rs. ${dailyProfit.toFixed(2)}`;
+  }
+
+  function shareWhatsApp() {
+    if (cart.length === 0) return alert("Cart is empty!");
+    let msg = "*-- Fauji Kiryana Store Bill --*\n\n";
+    let subtotal = 0;
+    cart.forEach(i => {
+      const tot = i.qty * i.price;
+      subtotal += tot;
+      msg += `${i.name} - ${i.qty} x Rs. ${i.price} = Rs. ${tot}\n`;
+    });
+    msg += `\nSubtotal: Rs. ${subtotal}\n`;
+    msg += `Discount: Rs. ${calculatedDiscount.toFixed(2)}\n`;
+    msg += `*Grand Total: Rs. ${grandTotalCalculated.toFixed(2)}*\n\n`;
+    msg += "Payment Breakdown:\n";
+    msg += document.getElementById('receiptPaymentBreakdown').innerText.replace(/•/g, '-') + "\n\n";
+    msg += "Thank you for shopping!";
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+  }
+
+  function toggleScanner(mode = "sales") {
+    scanTargetMode = mode;
+    const reader = document.getElementById('reader');
+    if (reader.style.display === 'block') {
+      reader.style.display = 'none';
+      if (html5QrcodeScanner) html5QrcodeScanner.clear();
+    } else {
+      reader.style.display = 'block';
+      html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+      html5QrcodeScanner.render(onScanSuccess);
+    }
+  }
+
+  function onScanSuccess(decodedText) {
+    if (scanTargetMode === "listing") {
+      document.getElementById('dbBarcode').value = decodedText;
+      alert(`Barcode ${decodedText} captured!`);
+      toggleScanner('listing');
+    } else {
+      let foundKey = Object.keys(productDB).find(k => productDB[k][4] === decodedText);
+      if (foundKey) {
+        const p = productDB[foundKey];
+        addToCart(p[2], 1, p[0], p[1], foundKey);
+      } else {
+        alert(`Barcode ${decodedText} not found.`);
+      }
+    }
+  }
+
+  /* --- ADVANCED VOICE RECOGNITION ENGINE --- */
+  function speak(text) {
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1;
+      window.speechSynthesis.speak(utterance);
+    }
+  }
+
+  function toggleVoice() {
+    const btn = document.getElementById('voiceBtn');
+    const statusText = document.getElementById('voiceTextStatus');
+
+    if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+      return alert("Speech Recognition is not supported in this browser. Please use Chrome or Edge.");
+    }
+
+    if (isListening) {
+      stopVoice();
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US'; // Handles English and Roman Urdu keywords effectively
+
+    recognition.onstart = () => {
+      isListening = true;
+      btn.classList.add('listening');
+      btn.innerText = "🛑 Stop Listening";
+      statusText.innerText = "Listening... Speak now!";
+      statusText.style.color = "#dc3545";
+    };
+
+    recognition.onresult = (event) => {
+      const lastIndex = event.results.length - 1;
+      const transcript = event.results[lastIndex][0].transcript.toLowerCase().trim();
+      statusText.innerText = `Heard: "${transcript}"`;
+      processVoiceCommand(transcript);
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Voice Error:", event.error);
+      statusText.innerText = `Voice Error: ${event.error}`;
+    };
+
+    recognition.onend = () => {
+      // Auto-restart if active for continuous listening
+      if (isListening) {
+        try { recognition.start(); } catch(e) {}
+      } else {
+        btn.classList.remove('listening');
+        btn.innerText = "🎤 Start Voice AI";
+        statusText.innerText = "Voice Stopped.";
+        statusText.style.color = "#6c757d";
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch(e) {
+      alert("Could not start microphone: " + e.message);
+    }
+  }
+
+  function stopVoice() {
+    isListening = false;
+    if (recognition) recognition.stop();
+  }
+
+  function processVoiceCommand(text) {
+    // Command 1: Clear Bill
+    if (text.includes("clear") || text.includes("saaf") || text.includes("delete bill")) {
+      clearCart();
+      speak("Bill cleared");
+      return;
+    }
+
+    // Command 2: Complete and Print Bill
+    if (text.includes("print") || text.includes("bill karo") || text.includes("complete")) {
+      completeAndPrint();
+      speak("Printing bill");
+      return;
+    }
+
+    // Command 3: Add Items with Quantity (e.g., "2 cheeni", "5 doodh", "add 3 bread")
+    // Match numbers in word or digit format
+    const numberWordsMap = { "one": 1, "ek": 1, "two": 2, "do": 2, "three": 3, "teen": 3, "four": 4, "chaar": 4, "five": 5, "paanch": 5 };
+    
+    let qty = 1;
+    let words = text.split(" ");
+    
+    // Check for digit numbers
+    const digitMatch = text.match(/\d+/);
+    if (digitMatch) {
+      qty = parseFloat(digitMatch[0]);
+    } else {
+      // Check for word numbers
+      for (let w of words) {
+        if (numberWordsMap[w]) {
+          qty = numberWordsMap[w];
+          break;
+        }
+      }
+    }
+
+    // Find product matching keyword in productDB
+    let detectedProductKey = null;
+    Object.keys(productDB).forEach(key => {
+      if (text.includes(key.toLowerCase())) {
+        detectedProductKey = key;
+      }
+    });
+
+    if (detectedProductKey) {
+      const item = productDB[detectedProductKey];
+      addToCart(item[2], qty, item[0], item[1], detectedProductKey);
+      speak(`Added ${qty} ${detectedProductKey}`);
+    } else {
+      speak("Product not recognized");
+    }
+  }
+</script>
+</body>
+</html>
